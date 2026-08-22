@@ -5,7 +5,6 @@ import time
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-# ===== 配置 =====
 FOLDERS = {
     "APP": {
         "url": "https://wwamp.lanzouu.com/b00zyvo2cf",
@@ -22,7 +21,6 @@ session.headers.update({
 })
 
 def get_page_html(url, pwd):
-    """访问页面，处理密码提交"""
     resp = session.get(url, timeout=10)
     html = resp.text
 
@@ -37,73 +35,64 @@ def get_page_html(url, pwd):
     return html
 
 def parse_files_and_folders(html, base_url):
-    """解析HTML，提取文件列表和子文件夹链接"""
     soup = BeautifulSoup(html, 'html.parser')
     files = []
     subfolders = []
 
-    rows = soup.select('tr.file') or soup.select('tr') or soup.select('.file-item')
-    for row in rows:
-        link_tag = row.find('a')
-        if not link_tag:
+    # ===== 激进模式：抓取页面中所有链接 =====
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        name = a.get_text(strip=True)
+        if not name or name in ['返回', '上一页', '首页']:
             continue
 
-        href = link_tag.get('href', '')
-        name = link_tag.get_text(strip=True)
-        if not name:
-            continue
-
-        full_url = urljoin(base_url, href) if href else ''
-
-        if 'folder' in href or name.endswith('/'):
-            subfolders.append({"name": name.rstrip('/'), "url": full_url})
+        full_url = urljoin(base_url, href)
+        
+        # 判断是否为文件夹：链接包含 b0 或 folder
+        if 'b0' in href or 'folder' in href:
+            subfolders.append({"name": name, "url": full_url})
+            print(f"    [子文件夹] {name} -> {full_url}")
         else:
-            size_td = row.find('td', class_='file_size') or row.find('span', class_='size')
-            size = size_td.get_text(strip=True) if size_td else ''
+            # 如果是文件，尝试获取大小
+            size = ''
+            parent = a.find_parent('tr')
+            if parent:
+                size_td = parent.find('td', class_='file_size')
+                if size_td:
+                    size = size_td.get_text(strip=True)
             files.append({"name": name, "size": size, "url": full_url})
 
-    # 正则兜底
+    # 如果还是没抓到，打印页面中的所有链接用于调试
     if not files and not subfolders:
-        trs = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
-        for tr in trs:
-            a_match = re.search(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', tr)
-            if a_match:
-                href = a_match.group(1)
-                name = a_match.group(2).strip()
-                full_url = urljoin(base_url, href)
-                if 'folder' in href or name.endswith('/'):
-                    subfolders.append({"name": name.rstrip('/'), "url": full_url})
-                else:
-                    size_match = re.search(r'<td[^>]*class="file_size"[^>]*>(.*?)</td>', tr)
-                    size = size_match.group(1).strip() if size_match else ''
-                    files.append({"name": name, "size": size, "url": full_url})
+        print("    [调试] 页面中所有链接:")
+        for a in soup.find_all('a', href=True):
+            print(f"      {a.get_text(strip=True)} -> {a['href']}")
 
     return files, subfolders
 
-def fetch_recursive(url, pwd, visited=None):
-    """递归抓取文件夹及其所有子文件夹（即使当前文件夹没有文件）"""
+def fetch_recursive(url, pwd, visited=None, depth=0):
     if visited is None:
         visited = set()
     if not url or url in visited:
         return []
     visited.add(url)
 
-    print(f"  正在抓取: {url}")
+    indent = "  " * depth
+    print(f"{indent}📁 正在抓取: {url}")
     try:
         html = get_page_html(url, pwd)
         files, subfolders = parse_files_and_folders(html, url)
 
-        print(f"    当前文件夹: {len(files)} 个文件, {len(subfolders)} 个子文件夹")
+        print(f"{indent}   📄 当前文件夹: {len(files)} 个文件, {len(subfolders)} 个子文件夹")
         
-        # 递归抓取所有子文件夹
         for sub in subfolders:
-            sub_files = fetch_recursive(sub['url'], pwd, visited)
+            sub_files = fetch_recursive(sub['url'], pwd, visited, depth + 1)
             files.extend(sub_files)
 
-        time.sleep(1)
+        time.sleep(0.8)
         return files
     except Exception as e:
-        print(f"  抓取失败: {e}")
+        print(f"{indent}   ❌ 抓取失败: {e}")
         return []
 
 def main():
@@ -115,7 +104,7 @@ def main():
             print(f'⚠️ 跳过 {name}：未配置链接')
             result[name] = []
             continue
-        print(f'📁 正在递归抓取分类: {name}')
+        print(f'📁 开始递归抓取分类: {name}')
         files = fetch_recursive(url, pwd)
         print(f'   ✅ 抓取完成，共 {len(files)} 个文件')
         result[name] = files
