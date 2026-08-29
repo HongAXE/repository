@@ -1,16 +1,5 @@
 {
-  "APP": [
-    {
-      "name": "登录",
-      "size": "",
-      "url": "https://wwamp.lanzouu.com/account.php?action=login"
-    },
-    {
-      "name": "文件投诉",
-      "size": "",
-      "url": "https://wwamp.lanzouu.com/q/jb/?f=13876745&l=b&report=2"
-    }
-  ],
+  "APP": [],
   "Malody": [],
   "Phira": [],
   "osu!": []
